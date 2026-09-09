@@ -1,0 +1,68 @@
+name: Shorky Pre-Flight Gate Verification
+
+# Live E2E verification of shorky-cloud's /api/v1/preflight budget and
+# subscription gate (the same endpoint the Shorky CLI/action calls via
+# runPreflightCheck() in shorky's src/cli/preflight.ts before starting any
+# LLM repair loop). Runs 3 scenarios against 3 dedicated QA fixture
+# projects seeded in shorky-cloud (see shorky-cloud/scripts/seed.ts):
+#
+#   - active       -> expects 200 OK  (well-funded, active subscription)
+#   - past_due     -> expects 402     (inactive subscription)
+#   - over_budget  -> expects 429     (monthly token budget exhausted)
+#
+# This does NOT run the full Shorky auto-heal action (no OpenAI calls, no
+# PR side effects) — it verifies the exact HTTP contract the CLI relies on
+# directly and cheaply. Manual dispatch only; not run on every push, since
+# it's a targeted integration check of shorky-cloud rather than of this
+# repo's own Playwright suite.
+
+on:
+  workflow_dispatch:
+
+jobs:
+  verify-preflight-gate:
+    timeout-minutes: 5
+    runs-on: ubuntu-latest
+    env:
+      SHORKY_CLOUD_URL: ${{ vars.SHORKY_CLOUD_URL || 'https://shorky-cloud.vercel.app/api/v1/telemetry' }}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - scenario: active
+            expect: pass
+            api_key_secret: SHORKY_API_KEY_ACTIVE
+          - scenario: past_due
+            expect: '402'
+            api_key_secret: SHORKY_API_KEY_PAST_DUE
+          - scenario: over_budget
+            expect: '429'
+            api_key_secret: SHORKY_API_KEY_OVER_BUDGET
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Verify required secret is configured
+        run: |
+          if [ -z "${{ secrets[matrix.api_key_secret] }}" ]; then
+            echo "❌ Secret '${{ matrix.api_key_secret }}' is not set. See CLINE.md for the shorky-cloud fixture projects/keys this workflow requires."
+            exit 1
+          fi
+          echo "✅ Secret '${{ matrix.api_key_secret }}' is present."
+
+      # The actual live verification: calls shorky-cloud's real
+      # /api/v1/preflight endpoint and asserts the HTTP status matches the
+      # scenario's expected outcome. Exits non-zero (failing this job) if
+      # the live gate did not behave as expected — e.g. a "past_due"
+      # fixture project that unexpectedly returns 200 would fail this step.
+      - name: "Verify scenario: ${{ matrix.scenario }} (expect ${{ matrix.expect }})"
+        env:
+          SHORKY_API_KEY: ${{ secrets[matrix.api_key_secret] }}
+        run: node scripts/verify-preflight-gate.js --expect=${{ matrix.expect }}

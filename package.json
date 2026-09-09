@@ -5,7 +5,8 @@
   "private": true,
   "scripts": {
     "test": "playwright test",
-    "test:headed": "playwright test --headed"
+    "test:headed": "playwright test --headed",
+    "verify:preflight-gate": "node scripts/verify-preflight-gate.js"
   },
   "devDependencies": {
     "@playwright/test": "^1.62.1",

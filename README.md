@@ -117,13 +117,50 @@ See [`.github/workflows/test.yml`](.github/workflows/test.yml):
 5. Always uploads the Playwright HTML report and raw `test-results/`
    (traces, screenshots, diffs) as build artifacts.
 
+## Pre-Flight Gate Verification (shorky-cloud budget/subscription gate)
+
+In addition to the auto-healing validation suite above, this repo includes a
+lightweight, dependency-free script and GitHub Actions workflow that verify
+`shorky-cloud`'s **pre-flight budget/subscription gate**
+(`POST /api/v1/preflight`) live — the exact check the Shorky CLI performs
+before it starts any LLM repair loop (see `shorky`'s `src/cli/preflight.ts`).
+
+Run it manually via `workflow_dispatch` on
+[`.github/workflows/preflight-gate-verification.yml`](.github/workflows/preflight-gate-verification.yml),
+which exercises three scenarios against three dedicated fixture projects in
+`shorky-cloud`:
+
+| Scenario | Required secret | Expected result |
+|---|---|---|
+| Active, well-funded project | `SHORKY_API_KEY_ACTIVE` | `200 OK` — gate passes |
+| Subscription `past_due`/`canceled` | `SHORKY_API_KEY_PAST_DUE` | `402 Payment Required` |
+| Monthly token budget exceeded | `SHORKY_API_KEY_OVER_BUDGET` | `429 Too Many Requests` |
+
+Also runnable locally:
+
+```bash
+SHORKY_CLOUD_URL=https://shorky-cloud.vercel.app/api/v1/telemetry \
+SHORKY_API_KEY=<your-fixture-project-api-key> \
+npm run verify:preflight-gate -- --expect=pass   # or --expect=402 / --expect=429
+```
+
+**Setup required in `shorky-cloud`:** the three fixture `projects` rows
+referenced above (and their API keys, which must be copied into this
+repo's GitHub secrets) are seeded via `shorky-cloud`'s
+`scripts/seed.ts` (`npm run db:seed`) — see that repo's documentation for
+the exact seeded values. See `CLINE.md`'s "Pre-Flight Gate Verification"
+section here for the full contract.
+
 ## Project structure
 
 ```
 shorky-test-consumer/
 ├── .github/
 │   └── workflows/
-│       └── test.yml                              # CI: run Playwright + Shorky auto-healer
+│       ├── test.yml                              # CI: run Playwright + Shorky auto-healer
+│       └── preflight-gate-verification.yml       # CI: live shorky-cloud /api/v1/preflight gate check
+├── scripts/
+│   └── verify-preflight-gate.js                  # Live pre-flight gate verification script
 ├── tests/
 │   └── shorky-validation/
 │       ├── broken-login-flow.spec.ts             # DOM interaction failure (stale locators)

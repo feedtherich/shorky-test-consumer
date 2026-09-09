@@ -44,6 +44,11 @@ npm run test:headed    # -> playwright test --headed
 
 # Run a single spec / project directly
 npx playwright test tests/shorky-validation/broken-login-flow.spec.ts --project="Google Chrome"
+
+# Verify shorky-cloud's live /api/v1/preflight gate for one scenario
+# (requires SHORKY_CLOUD_URL + SHORKY_API_KEY — see "Pre-Flight Gate
+# Verification" below)
+SHORKY_CLOUD_URL=... SHORKY_API_KEY=... npm run verify:preflight-gate -- --expect=pass
 ```
 
 There is no lint, typecheck, or build script defined in `package.json`; `tsconfig.json` is used for editor/type-checking support only (`noEmit: true`).
@@ -52,6 +57,25 @@ There is no lint, typecheck, or build script defined in `package.json`; `tsconfi
 - `SHORKY_CLOUD_URL` / `SHORKY_CLOUD_API_KEY` — optional telemetry/webhook target passed through to the Shorky action.
 - `OPENAI_API_KEY` — used by the Shorky action to generate LLM-based fixes.
 - `GITHUB_TOKEN` — used by the Shorky action to push the healing branch and open the PR (requires `contents: write` + `pull-requests: write` permissions, already set in the workflow).
+
+## Pre-Flight Gate Verification
+
+`scripts/verify-preflight-gate.js` and `.github/workflows/preflight-gate-verification.yml` provide a **live, dependency-free E2E check** of shorky-cloud's `/api/v1/preflight` budget/subscription gate — the same endpoint `shorky`'s CLI (`runPreflightCheck()` in `src/cli/preflight.ts`) calls before starting any LLM repair loop. This is intentionally a *direct endpoint check*, not a full run of the `whoff77/shorky` composite action, so it costs no OpenAI tokens and never opens a PR.
+
+- **Script (`scripts/verify-preflight-gate.js`):** a plain Node.js (CommonJS, zero new dependencies) script that POSTs to `<SHORKY_CLOUD_URL base>/api/v1/preflight` with the `x-shorky-api-key: $SHORKY_API_KEY` header, mirroring `shorky`'s pre-flight request/response contract exactly (402/429 = hard block, anything else = fail-open). Takes a required `--expect=<pass|402|429>` flag and exits `0` only if the live response matches; exits `1` on a mismatch (verification failure) and `2` on misconfiguration (missing env vars/flag).
+- **Workflow (`.github/workflows/preflight-gate-verification.yml`):** `workflow_dispatch`-only (not run on every push, since it's a targeted integration check of `shorky-cloud`, not this repo's own suite). Runs a 3-entry matrix, each scenario pointing at its own dedicated GitHub Actions secret:
+
+  | Matrix scenario | Secret name | Expected outcome |
+  |---|---|---|
+  | `active` | `SHORKY_API_KEY_ACTIVE` | `pass` (HTTP 200) |
+  | `past_due` | `SHORKY_API_KEY_PAST_DUE` | `402` |
+  | `over_budget` | `SHORKY_API_KEY_OVER_BUDGET` | `429` |
+
+- **Required `shorky-cloud` fixture data:** each secret above must hold the `apiKey` of a distinct `projects` row in `shorky-cloud`'s database, configured as follows (already seeded via `shorky-cloud`'s `scripts/seed.ts` against its dev DB as of this writing — see that repo's `CLINE.md` for the exact seeded key values, which should be copied into this repo's secrets):
+  - **Active/well-funded project:** `subscriptionStatus: 'active'`, `tokensUsedThisMonth` comfortably below `monthlyTokenLimit`.
+  - **Past-due project:** `subscriptionStatus: 'past_due'` (or `'canceled'`) — any token counters.
+  - **Over-budget project:** `subscriptionStatus: 'active'`, `tokensUsedThisMonth >= monthlyTokenLimit`.
+- **`SHORKY_CLOUD_URL`:** same env var convention as `.github/workflows/test.yml` — a repository/organization variable (`vars.SHORKY_CLOUD_URL`) defaulting to the hosted `https://shorky-cloud.vercel.app/api/v1/telemetry`; override it (e.g. to a staging/dev shorky-cloud deployment) via repo Settings > Secrets and variables > Actions > Variables.
 
 ## Architecture & Conventions
 
