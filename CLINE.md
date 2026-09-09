@@ -17,6 +17,9 @@ The suite runs with **multiple parallel Playwright workers** (`workers` in `play
 
 This repo exists purely to exercise the CI healing flow — **`npm test` is expected to fail locally on purpose.**
 
+## Core Development Rules
+- **Self-Documenting Changes:** Every time you implement a new feature, update schema, add an API route, or modify core architecture, you MUST (if helpful to future development) update this `CLINE.md` file before finishing the task to reflect the new state of the codebase
+
 ## Tech Stack & Core Tools
 
 - **Language/Runtime:** TypeScript, Node.js
