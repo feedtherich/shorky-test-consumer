@@ -3,7 +3,15 @@
 A minimal Node.js + TypeScript + Playwright project used to validate
 [Shorky](https://github.com/whoff77/shorky)'s AI-powered auto-healing
 GitHub Action end-to-end, consumed as a published marketplace action
-(`whoff77/shorky@v1.3.7`).
+(see `.github/workflows/test.yml` for the current version pin).
+
+## The Shorky Ecosystem
+
+Shorky is designed as a three-part ecosystem, separating the core open-source engine from the optional, monetized governance and observability layer.
+
+1. **`shorky` (The Core Engine):** This repository. Shipped as a local CLI and a composite GitHub Action. It processes failed Playwright JSON reports, orchestrates the LLM code-fixes, overwrites local files, and handles GitHub PR creation. 
+2. **`shorky-cloud` (The SaaS):** The hosted telemetry and governance dashboard. It provides a per-project API key to track run history, self-healing trace timelines, and LLM token spend. For paying "Pro" tier users, it enforces a monthly token budget guardrail to prevent runaway LLM costs in CI.
+3. **`shorky-test-consumer` (The Proving Ground):** A live sample repository configured with intentionally broken specs to validate the end-to-end GitHub Action batching loop and Cloud governance gates.
 
 ## What this project does
 
@@ -46,7 +54,7 @@ GitHub Action end-to-end, consumed as a published marketplace action
      assertions remain untouched and never trigger a false healing fix or
      PR participation.
 3. When one or more specs fail, `.github/workflows/test.yml` invokes the
-   published `whoff77/shorky@v1.3.7` GitHub Action, which:
+   published `whoff77/shorky` GitHub Action (pinned version in that file), which:
 
    - Parses the Playwright JSON report (`test-results/report.json`) to find
      failed tests and their `trace.zip` / screenshot / visual-diff
@@ -110,7 +118,7 @@ See [`.github/workflows/test.yml`](.github/workflows/test.yml):
    every intentionally-broken spec runs to completion and all failures
    accumulate into one batch report instead of the job stopping at the
    first failure.
-4. If any spec failed, runs `whoff77/shorky@v1.3.7` with `openai-api-key`,
+4. If any spec failed, runs the pinned `whoff77/shorky` action with `openai-api-key`,
    `shorky-cloud-api-key`, and `github-token` inputs against that single
    report to trigger the consolidated auto-healing pull request, then
    surfaces the true pass/fail status of the run.

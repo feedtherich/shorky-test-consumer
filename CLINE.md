@@ -1,8 +1,14 @@
 # CLINE.md — shorky-test-consumer
 
+## Ecosystem Overview (Multi-Repo)
+This repository is part of the 3-repo Shorky ecosystem.
+* **`shorky` (The Engine):** The CLI and composite GitHub Action. Parses Playwright traces and uses an LLM to permanently rewrite broken `.spec.ts` files in place ("fail-and-rewrite"). *Rule: No consumer tests or UI in this repo.*
+* **`shorky-cloud` (The SaaS):** The Next.js dashboard, telemetry webhook ingestor, and API governance layer (Stripe, NextAuth, Neon Postgres). *Rule: Does not run tests or fix code; only stores and displays telemetry.*
+* **`shorky-test-consumer` (The Proving Ground):** The target project containing actual Playwright tests and the CI pipeline (`shorky-heal.yml`) that triggers the Action. *Rule: Used purely to validate the end-to-end healing loop.*
+
 ## Project Overview
 
-`shorky-test-consumer` is a **minimal sample Playwright + TypeScript project** used to validate the [`shorky`](https://github.com/whoff77/shorky) AI-powered auto-healing GitHub Action end-to-end, consuming it as a published marketplace action (`whoff77/shorky@v1.3.7`). It runs a single Playwright suite (`tests/shorky-validation/`) against a public demo site (`the-internet.herokuapp.com`) with **six spec files**, each exercising a different category Shorky must be able to handle:
+`shorky-test-consumer` is a **minimal sample Playwright + TypeScript project** used to validate the [`shorky`](https://github.com/whoff77/shorky) AI-powered auto-healing GitHub Action end-to-end, consuming it as a published marketplace action (currently pinned to `whoff77/shorky@v1.3.13` in `.github/workflows/test.yml` — always check that file for the exact live pin, since it's bumped independently of this doc). It runs a single Playwright suite (`tests/shorky-validation/`) against a public demo site (`the-internet.herokuapp.com`) with **six spec files**, each exercising a different category Shorky must be able to handle:
 
 - `tests/shorky-validation/broken-login-flow.spec.ts` — DOM interaction failure (stale locators `#user-name` / `#pass-word`; the real ids are `#username` / `#password`).
 - `tests/shorky-validation/dynamic-form-elements.spec.ts` — semantic action-contract errors (`.fill()` on a `<select>`/checkbox instead of `.selectOption()` / `.check()`) to verify the LLM diagnostics correct the *action*, not just the selector.
@@ -18,14 +24,14 @@ The suite runs with **multiple parallel Playwright workers** (`workers` in `play
 This repo exists purely to exercise the CI healing flow — **`npm test` is expected to fail locally on purpose.**
 
 ## Core Development Rules
-- **Self-Documenting Changes:** Every time you implement a new feature, update schema, add an API route, or modify core architecture, you MUST (if helpful to future development) update this `CLINE.md` file before finishing the task to reflect the new state of the codebase
+- **Self-Documenting Changes:** Before finishing ANY task that adds/removes a spec file, bumps the `whoff77/shorky@vX.Y.Z` action pin, changes `playwright.config.ts`/`global-setup.ts`, or otherwise changes behavior described below, you MUST update this `CLINE.md` (and `README.md`, where it duplicates the same facts) to match — both adding what's new AND deleting/correcting whatever it said before that is now stale, wrong, or extraneous (e.g. a hardcoded version number that's since been bumped). A stale or contradictory `CLINE.md` costs more tokens on every future task than no doc at all (the agent has to re-discover the truth from source first), so treat pruning outdated content as equally mandatory as adding new content. Skip only genuinely trivial changes (typo fixes, formatting, comments) that don't change any behavior this file documents.
 
 ## Tech Stack & Core Tools
 
 - **Language/Runtime:** TypeScript, Node.js
 - **Test/Automation Engine:** Playwright (`@playwright/test`)
 - **Target under test:** public demo site `https://the-internet.herokuapp.com` (configured as `baseURL`)
-- **CI integration under test:** `whoff77/shorky@v1.3.7` GitHub Action (composite action from the sibling `shorky` repo)
+- **CI integration under test:** `whoff77/shorky` GitHub Action (composite action from the sibling `shorky` repo; see `.github/workflows/test.yml` for the current version pin)
 - **Optional telemetry integration:** `shorky-cloud` (via `SHORKY_CLOUD_URL` / `SHORKY_CLOUD_API_KEY`)
 - No build step, database, or backend — this is a pure Playwright test fixture project.
 
@@ -86,6 +92,6 @@ There is no lint, typecheck, or build script defined in `package.json`; `tsconfi
 - **`tests/shorky-validation/clean-happy-path.spec.ts`** — negative control; must never be touched by the auto-healer or contribute to the batch report.
 - **`playwright.config.ts`** — single browser project (`Google Chrome`), `trace: 'retain-on-failure'` and `screenshot: 'only-on-failure'` so Shorky's fixer always has a trace.zip + screenshot to work from; JSON reporter writes to `test-results/report.json` (the path the Shorky action expects via `report-path`). `workers` runs multiple parallel workers (including on CI); `globalSetup` points at `global-setup.ts`, which must always run before workers spawn so `SHORKY_RUN_ID` is established up front.
 - **`global-setup.ts`** — mints/reuses the shared `SHORKY_RUN_ID` before Playwright spawns workers and persists it (env var inheritance + `test-results/.shorky-run-id` file + `$GITHUB_ENV` on CI) so multi-worker runs and the downstream Shorky CLI step all share one run identifier.
-- **`.github/workflows/test.yml`** — runs on push/PR to `main`; installs deps + Chromium, validates required env vars, runs `tests/shorky-validation` with `continue-on-error: true` so all failures batch into one report, invokes `whoff77/shorky@v1.3.7` against that report when any spec failed, then always uploads the HTML report and raw `test-results/` (traces, screenshots, diffs) as build artifacts.
+- **`.github/workflows/test.yml`** — runs on push/PR to `main`; installs deps + Chromium, validates required env vars, runs `tests/shorky-validation` with `continue-on-error: true` so all failures batch into one report, invokes the pinned `whoff77/shorky@vX.Y.Z` action against that report when any spec failed, then always uploads the HTML report and raw `test-results/` (traces, screenshots, diffs) as build artifacts.
 - **When updating the consumed Shorky action version:** bump the `uses: whoff77/shorky@vX.Y.Z` pin in `.github/workflows/test.yml` and mention the version in `README.md`.
 - **Repository Settings requirement:** GitHub Actions must be allowed to create and approve pull requests (Settings > Actions > General > Workflow permissions) for the auto-heal PR step to succeed.
