@@ -8,7 +8,7 @@ This repository is part of the 3-repo Shorky ecosystem.
 
 ## Project Overview
 
-`shorky-test-consumer` is a **minimal sample Playwright + TypeScript project** used to validate the [`shorky`](https://github.com/whoff77/shorky) AI-powered auto-healing GitHub Action end-to-end, consuming it as a published marketplace action (currently pinned to `whoff77/shorky@v1.3.13` in `.github/workflows/test.yml` — always check that file for the exact live pin, since it's bumped independently of this doc). It runs a single Playwright suite (`tests/shorky-validation/`) against a public demo site (`the-internet.herokuapp.com`) with **six spec files**, each exercising a different category Shorky must be able to handle:
+`shorky-test-consumer` is a **minimal sample Playwright + TypeScript project** used to validate the [`shorky`](https://github.com/whoff77/shorky) AI-powered auto-healing GitHub Action end-to-end, consuming it as a published marketplace action (currently pinned to `whoff77/shorky@v1.3.14` in `.github/workflows/test.yml` — always check that file for the exact live pin, since it's bumped independently of this doc). It runs a single Playwright suite (`tests/shorky-validation/`) against a public demo site (`the-internet.herokuapp.com`) with **six spec files**, each exercising a different category Shorky must be able to handle:
 
 - `tests/shorky-validation/broken-login-flow.spec.ts` — DOM interaction failure (stale locators `#user-name` / `#pass-word`; the real ids are `#username` / `#password`).
 - `tests/shorky-validation/dynamic-form-elements.spec.ts` — semantic action-contract errors (`.fill()` on a `<select>`/checkbox instead of `.selectOption()` / `.check()`) to verify the LLM diagnostics correct the *action*, not just the selector.
