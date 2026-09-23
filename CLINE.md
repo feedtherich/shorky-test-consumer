@@ -23,6 +23,15 @@ The suite runs with **multiple parallel Playwright workers** (`workers` in `play
 
 This repo exists purely to exercise the CI healing flow — **`npm test` is expected to fail locally on purpose.**
 
+## Verification Checklist (run before finishing ANY task)
+
+This repo has no build step and `npm test` failing locally is the *expected/correct* result for the intentionally-broken specs — don't mistake either of those facts for "nothing to verify":
+
+1. **`npx tsc --noEmit`** — there's no `typecheck`/`build` script in `package.json` (`tsconfig.json` is editor/type-checking support only, `noEmit: true`), but running `tsc` directly still catches syntax/type errors in `global-setup.ts`, `playwright.config.ts`, or any spec you touch, before it ever reaches CI.
+2. **`npx playwright test <changed-spec> --project="Google Chrome"`** — run only the spec(s) you actually changed, and confirm the *failure mode* matches what that spec's category is supposed to exercise (e.g. `broken-login-flow.spec.ts` should fail on the stale locator, not on an unrelated syntax/timeout error you accidentally introduced). Don't run the full `npm test` suite as your "did it work" signal — it's supposed to fail, and a full-suite failure doesn't tell you whether *your* change is what's failing.
+3. **`tests/shorky-validation/clean-happy-path.spec.ts` must still pass** — this is the negative control; if it starts failing, something you changed (config, `global-setup.ts`, a shared fixture) broke the suite generally rather than exercising one spec's intended failure category.
+4. If you bumped the `whoff77/shorky@vX.Y.Z` pin in `.github/workflows/test.yml`, grep this repo for the old version string (`grep -rn 'v1\\.' CLINE.md README.md .github/`) to make sure no stale reference to it survives elsewhere — this exact class of drift (a hardcoded version number going stale in 3+ places) has happened before in this ecosystem.
+
 ## Core Development Rules
 
 - **Self-Documenting Changes:** Before finishing ANY task that adds/removes a spec file, bumps the `whoff77/shorky@vX.Y.Z` action pin, changes `playwright.config.ts`/`global-setup.ts`, or otherwise changes behavior described below, you MUST update this `CLINE.md` (and `README.md`, where it duplicates the same facts) to match — both adding what's new AND deleting/correcting whatever it said before that is now stale, wrong, or extraneous (e.g. a hardcoded version number that's since been bumped). A stale or contradictory `CLINE.md` costs more tokens on every future task than no doc at all (the agent has to re-discover the truth from source first), so treat pruning outdated content as equally mandatory as adding new content. Skip only genuinely trivial changes (typo fixes, formatting, comments) that don't change any behavior this file documents.
