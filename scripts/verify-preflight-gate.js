@@ -26,18 +26,27 @@
 // Usage:
 //   node scripts/verify-preflight-gate.js --expect=<pass|402|429>
 //
-// Required environment variables:
-//   SHORKY_CLOUD_URL  - base URL or full /api/v1/telemetry URL of the
-//                        target shorky-cloud instance (same env var the
-//                        Shorky CLI/action reads).
-//   SHORKY_API_KEY    - the x-shorky-api-key for the fixture project to
-//                        test against (see README.md / CLINE.md for the
-//                        three QA fixture projects this is designed for).
+// Environment variables:
+//   SHORKY_API_KEY    - required; the x-shorky-api-key for the fixture
+//                        project to test against (see README.md / CLINE.md
+//                        for the three QA fixture projects this is
+//                        designed for).
+//   SHORKY_CLOUD_URL  - OPTIONAL override of the target shorky-cloud base
+//                        URL, for pointing this script at a local/tunneled
+//                        or staging deployment instead of production.
+//                        Defaults to the hosted production instance
+//                        (https://shorky-cloud.vercel.app) when unset, same
+//                        as the Shorky CLI/action itself. Any value
+//                        provided (including one with a stale subpath like
+//                        `/api/v1/telemetry`) is normalized down to just its
+//                        origin before `/api/v1/preflight` is appended.
 //
 // Exit codes:
 //   0 - the live gate behaved exactly as expected for --expect.
 //   1 - the live gate did NOT behave as expected (verification failure).
 //   2 - misconfiguration (missing env vars / bad --expect value).
+
+const DEFAULT_SHORKY_CLOUD_BASE_URL = 'https://shorky-cloud.vercel.app';
 
 const VALID_EXPECTATIONS = ['pass', '402', '429'];
 
@@ -48,13 +57,26 @@ function parseArgs(argv) {
 }
 
 /**
- * Resolves the /api/v1/preflight URL from a base/telemetry SHORKY_CLOUD_URL
- * value, mirroring shorky's src/config/shorkyCloud.ts::getShorkyCloudPreflightUrl().
+ * Resolves the /api/v1/preflight URL from an OPTIONAL SHORKY_CLOUD_URL
+ * override, mirroring shorky's src/config/shorkyCloud.ts::getShorkyCloudBaseUrl()
+ * / getShorkyCloudGovernancePreflightUrl(): defaults to the production
+ * origin when unset/blank, and otherwise defensively normalizes whatever
+ * value is provided down to just its origin (scheme + host + port), so a
+ * stale subpath (e.g. `/api/v1/telemetry`) or trailing slash never leaks
+ * into the constructed preflight URL. Falls back to the default origin on
+ * any URL parse failure rather than throwing.
  */
 function resolvePreflightUrl(rawCloudUrl) {
-  const trimmed = rawCloudUrl.trim().replace(/\/+$/, '');
-  const base = trimmed.replace(/\/api\/v1\/telemetry\/?$/, '');
-  return `${base}/api/v1/preflight`;
+  const raw = rawCloudUrl && rawCloudUrl.trim() ? rawCloudUrl.trim() : DEFAULT_SHORKY_CLOUD_BASE_URL;
+
+  let origin;
+  try {
+    origin = new URL(raw).origin;
+  } catch {
+    origin = DEFAULT_SHORKY_CLOUD_BASE_URL;
+  }
+
+  return `${origin}/api/v1/preflight`;
 }
 
 async function runPreflightCheck(preflightUrl, apiKey) {
@@ -97,13 +119,11 @@ async function main() {
     process.exit(2);
   }
 
+  // SHORKY_CLOUD_URL is an OPTIONAL override — resolvePreflightUrl() falls
+  // back to the production shorky-cloud origin when it's unset.
   const rawCloudUrl = process.env.SHORKY_CLOUD_URL;
   const apiKey = process.env.SHORKY_API_KEY;
 
-  if (!rawCloudUrl) {
-    console.error('❌ [Preflight Verify] SHORKY_CLOUD_URL environment variable is not set.');
-    process.exit(2);
-  }
   if (!apiKey) {
     console.error('❌ [Preflight Verify] SHORKY_API_KEY environment variable is not set.');
     process.exit(2);

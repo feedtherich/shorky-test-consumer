@@ -111,8 +111,10 @@ locally.
 See [`.github/workflows/test.yml`](.github/workflows/test.yml):
 
 1. Checks out the repo and installs dependencies + Chromium.
-2. Validates that required Shorky environment variables (`SHORKY_CLOUD_URL`,
-   `SHORKY_CLOUD_API_KEY`, `GITHUB_REPOSITORY`, `GITHUB_TOKEN`) are present.
+2. Validates that required Shorky environment variables (`GITHUB_REPOSITORY`,
+   `GITHUB_TOKEN`) are present, and warns (non-fatally) if `SHORKY_CLOUD_API_KEY`
+   is missing. `SHORKY_CLOUD_URL` is no longer required or checked — Shorky
+   defaults to the hosted production instance unless explicitly overridden.
 3. Runs `npx playwright test tests/shorky-validation --project="Google Chrome"`
    with `continue-on-error: true`, writing `test-results/report.json`, so
    every intentionally-broken spec runs to completion and all failures
@@ -147,9 +149,12 @@ which exercises three scenarios against three dedicated fixture projects in
 Also runnable locally:
 
 ```bash
-SHORKY_CLOUD_URL=https://shorky-cloud.vercel.app/api/v1/telemetry \
 SHORKY_API_KEY=<your-fixture-project-api-key> \
 npm run verify:preflight-gate -- --expect=pass   # or --expect=402 / --expect=429
+
+# SHORKY_CLOUD_URL is an OPTIONAL override, only needed to point the script
+# at a local/self-hosted/staging shorky-cloud deployment instead of
+# production (e.g. SHORKY_CLOUD_URL=http://localhost:3000).
 ```
 
 **Setup required in `shorky-cloud`:** the three fixture `projects` rows
