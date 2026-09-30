@@ -110,22 +110,90 @@ locally.
 
 See [`.github/workflows/test.yml`](.github/workflows/test.yml):
 
-1. Checks out the repo and installs dependencies + Chromium.
-2. Validates that required Shorky environment variables (`GITHUB_REPOSITORY`,
+1. Checks out the repo and sets up Node.js.
+2. Runs `npm run verify-pin` (see "Action Version Pin Verification" below)
+   to fail the job immediately if the `whoff77/shorky` action pin has
+   drifted from the latest published `shorky` release, before installing
+   dependencies or spending any further CI minutes.
+3. Installs dependencies + Chromium.
+4. Validates that required Shorky environment variables (`GITHUB_REPOSITORY`,
    `GITHUB_TOKEN`) are present, and warns (non-fatally) if `SHORKY_CLOUD_API_KEY`
    is missing. `SHORKY_CLOUD_URL` is no longer required or checked — Shorky
    defaults to the hosted production instance unless explicitly overridden.
-3. Runs `npx playwright test tests/shorky-validation --project="Google Chrome"`
+5. Runs `npx playwright test tests/shorky-validation --project="Google Chrome"`
    with `continue-on-error: true`, writing `test-results/report.json`, so
    every intentionally-broken spec runs to completion and all failures
    accumulate into one batch report instead of the job stopping at the
    first failure.
-4. If any spec failed, runs the pinned `whoff77/shorky` action with `openai-api-key`,
+6. If any spec failed, runs the pinned `whoff77/shorky` action with `openai-api-key`,
    `shorky-cloud-api-key`, and `github-token` inputs against that single
    report to trigger the consolidated auto-healing pull request, then
    surfaces the true pass/fail status of the run.
-5. Always uploads the Playwright HTML report and raw `test-results/`
+7. Always uploads the Playwright HTML report and raw `test-results/`
    (traces, screenshots, diffs) as build artifacts.
+
+## Action Version Pin Verification (drift guard)
+
+To prevent the `uses: whoff77/shorky@vX.Y.Z` pin in
+[`.github/workflows/test.yml`](.github/workflows/test.yml) from silently
+drifting out of sync with the actual latest published `shorky` release, this
+repo includes a lightweight, dependency-free script
+([`scripts/verify-action-version.js`](scripts/verify-action-version.js))
+that:
+
+1. Fetches `https://api.github.com/repos/whoff77/shorky/releases/latest`
+   and reads its `tag_name`.
+2. Reads the current `uses: whoff77/shorky@vX.Y.Z` pin out of
+   `.github/workflows/test.yml`.
+3. Fails (non-zero exit) if the two versions don't match, with a message
+   telling you exactly which line to bump.
+
+**CI now enforces this automatically** — `.github/workflows/test.yml` runs
+`npm run verify-pin` as its very first step, so the job fails fast whenever
+the action pin isn't strictly synced with the latest published `shorky` tag.
+
+Run it locally any time with:
+
+```bash
+npm run verify-pin
+```
+
+## Auto-Accept Visual Baselines Verification
+
+[`shorky`](https://github.com/whoff77/shorky) supports an opt-in **"Auto-Accept
+Visual Baselines"** workflow: instead of only flagging a visual regression
+(pixel-diff) failure for manual review, Shorky can automatically overwrite the
+local baseline PNG with the newly captured "actual" screenshot and stage it
+into the consolidated auto-heal PR. This is controlled by the action's
+`update-visual-baselines` input (or the CLI's `--update-baselines` flag),
+defaulting to `false`/off.
+
+[`.github/workflows/test.yml`](.github/workflows/test.yml) intentionally
+leaves `update-visual-baselines` unset, so it continues to validate the
+*default* behavior — `visual-regression-check.spec.ts` failing and landing in
+the PR body's "🖼️ [Visual Review Required]" section, untouched.
+
+A separate, manually-dispatched workflow,
+[`.github/workflows/visual-baseline-auto-accept.yml`](.github/workflows/visual-baseline-auto-accept.yml),
+validates the *opted-in* behavior instead:
+
+1. Runs **only** `tests/shorky-validation/visual-regression-check.spec.ts` in
+   isolation, so the resulting report contains a single visual-regression
+   failure and nothing else to batch alongside it.
+2. Fails loudly if that spec unexpectedly passes (there would be nothing to
+   verify the feature against).
+3. Invokes the pinned `whoff77/shorky` action with
+   `update-visual-baselines: 'true'`, which should overwrite the committed
+   baseline PNG
+   (`tests/shorky-validation/visual-regression-check.spec.ts-snapshots/dropdown-page-baseline.png`)
+   with the new "actual" screenshot and stage it into the consolidated PR
+   under a distinct "🖼️ Auto-Updated Visual Baselines" section.
+
+Run it manually via `workflow_dispatch` on that workflow. **Note:** this
+permanently mutates the committed baseline PNG on the shared
+`shorky/auto-heal-fixes` branch — it's deliberately *not* run on every push,
+since `test.yml`'s own run of `visual-regression-check.spec.ts` relies on that
+baseline staying "intentionally wrong" so it reliably fails on every push.
 
 ## Pre-Flight Gate Verification (shorky-cloud budget/subscription gate)
 
@@ -171,9 +239,11 @@ shorky-test-consumer/
 ├── .github/
 │   └── workflows/
 │       ├── test.yml                              # CI: run Playwright + Shorky auto-healer
-│       └── preflight-gate-verification.yml       # CI: live shorky-cloud /api/v1/preflight gate check
+│       ├── preflight-gate-verification.yml       # CI: live shorky-cloud /api/v1/preflight gate check
+│       └── visual-baseline-auto-accept.yml       # CI (manual): live Auto-Accept Visual Baselines check
 ├── scripts/
-│   └── verify-preflight-gate.js                  # Live pre-flight gate verification script
+│   ├── verify-preflight-gate.js                  # Live pre-flight gate verification script
+│   └── verify-action-version.js                  # CI drift guard: shorky action pin vs. latest release
 ├── tests/
 │   └── shorky-validation/
 │       ├── broken-login-flow.spec.ts             # DOM interaction failure (stale locators)

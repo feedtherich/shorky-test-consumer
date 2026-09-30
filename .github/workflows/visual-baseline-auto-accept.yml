@@ -1,0 +1,111 @@
+name: Shorky Auto-Accept Visual Baselines Verification
+
+# Live E2E verification of Shorky's opt-in "Auto-Accept Visual Baselines"
+# workflow (shorky's action.yml `update-visual-baselines` input / CLI
+# `--update-baselines` flag — see shorky's src/cli/fixTrace.ts
+# updateVisualBaseline()).
+#
+# Runs ONLY tests/shorky-validation/visual-regression-check.spec.ts (the
+# suite's single intentional pixel-diff spec) in isolation, so the resulting
+# JSON report contains exactly one visual-regression failure and no
+# code-fixable failures to mix into the same batch. The Shorky action is
+# then invoked with `update-visual-baselines: 'true'`, which should:
+#   - overwrite the committed baseline PNG
+#     (tests/shorky-validation/visual-regression-check.spec.ts-snapshots/dropdown-page-baseline.png)
+#     with the newly captured "actual" screenshot from this run, and
+#   - stage that updated PNG into the consolidated auto-heal PR under a
+#     distinct "🖼️ Auto-Updated Visual Baselines" section (see
+#     buildPrBody() in shorky's src/utils/githubPr.ts), rather than only
+#     flagging it for manual review as the default (opted-out) behavior
+#     does — see the main `test.yml` workflow, which intentionally leaves
+#     `update-visual-baselines` unset/false to continue validating that
+#     default "flag for review" path.
+#
+# Manual dispatch only: this permanently mutates the committed baseline PNG
+# on the shared `shorky/auto-heal-fixes` branch, so it is NOT run on every
+# push (that would fight with test.yml's own visual-regression-check run,
+# which relies on the baseline staying "intentionally wrong" so it reliably
+# fails on every push).
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  verify-auto-accept-visual-baselines:
+    timeout-minutes: 15
+    runs-on: ubuntu-latest
+    env:
+      SHORKY_CLOUD_API_KEY: ${{ secrets.SHORKY_CLOUD_API_KEY }}
+      GITHUB_REPOSITORY: ${{ github.repository }}
+      GITHUB_REF_NAME: ${{ github.ref_name }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref || github.ref_name }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'npm'
+
+      - name: Verify shorky action pin is up to date
+        run: npm run verify-pin
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Playwright Browsers
+        run: npx playwright install --with-deps chrome
+
+      # Run ONLY the visual-regression spec, in isolation, so the JSON
+      # report this produces contains a single visual-regression failure
+      # and nothing else to batch alongside it.
+      - name: Run visual regression spec (expected to fail)
+        id: run_tests
+        continue-on-error: true
+        env:
+          PLAYWRIGHT_JSON_OUTPUT_NAME: 'test-results/report.json'
+        run: |
+          mkdir -p test-results
+          npx playwright test tests/shorky-validation/visual-regression-check.spec.ts --project="Google Chrome"
+
+      - name: Fail loudly if the visual regression spec unexpectedly PASSED
+        if: steps.run_tests.outcome != 'failure'
+        run: |
+          echo "❌ visual-regression-check.spec.ts was expected to fail (intentional pixel-diff), but it passed. Cannot verify Auto-Accept Visual Baselines without a real failure to process."
+          exit 1
+
+      # Invoke the published Shorky action with update-visual-baselines
+      # enabled — this is the behavior under test in this workflow.
+      - name: Run Shorky Auto-Healer (Auto-Accept Visual Baselines enabled)
+        if: steps.run_tests.outcome == 'failure'
+        uses: whoff77/shorky@v0.1.5
+        with:
+          shorky-cloud-api-key: ${{ env.SHORKY_CLOUD_API_KEY }}
+          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          report-path: 'test-results/report.json'
+          update-visual-baselines: 'true'
+
+      - name: Upload Playwright report
+        if: always()
+        uses: actions/upload-artifact@v4.4.3
+        with:
+          name: visual-baseline-auto-accept-playwright-report
+          path: playwright-report/
+          retention-days: 14
+
+      - name: Upload test artifacts (traces, screenshots, visual diffs)
+        if: always()
+        uses: actions/upload-artifact@v4.4.3
+        with:
+          name: visual-baseline-auto-accept-test-results
+          path: test-results/
+          retention-days: 14
